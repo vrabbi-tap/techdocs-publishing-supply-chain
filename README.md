@@ -1,4 +1,4 @@
-# TAP Supply Chain to deploy a helm chart using FluxCD
+# TAP Supply Chain that also publishes Techdocs to an S3 bucket
 
 ## Why do this
 One of the great features in TAP is the UI provided which is based on Backstage.  
