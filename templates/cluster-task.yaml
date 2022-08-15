@@ -1,0 +1,68 @@
+apiVersion: tekton.dev/v1beta1
+kind: ClusterTask
+metadata:
+  name: publish-techdocs
+spec:
+  params:
+  - name: source-url
+    type: string
+  - name: source-revision
+    type: string
+  - name: s3-creds-secret-name
+    type: string
+    default: techdocs-s3-creds
+    description: >-
+      This secret must exist in the namespace where the taskrun is created.
+      The secret must have the keys: endpoint-url, access-key, secret-key, region, and bucket
+  steps:
+  - image: harbor.vrabbi.cloud/library/techdocs-cli:0.0.1
+    name: generate-and-publish-docs
+    resources: {}
+    env:
+    - name: S3_ENDPOINT_URL
+      valueFrom:
+        secretKeyRef:
+          name: $(params.s3-creds-secret-name)
+          key: endpoint-url
+    - name: AWS_ACCESS_KEY_ID
+      valueFrom:
+        secretKeyRef:
+          name: $(params.s3-creds-secret-name)
+          key: access-key
+    - name: AWS_SECRET_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: $(params.s3-creds-secret-name)
+          key: secret-key
+    - name: AWS_REGION
+      valueFrom:
+        secretKeyRef:
+          name: $(params.s3-creds-secret-name)
+          key: region
+    - name: S3_BUCKET_NAME
+      valueFrom:
+        secretKeyRef:
+          name: $(params.s3-creds-secret-name)
+          key: bucket-name
+    script: |-
+      #!/bin/sh
+      cd `mktemp -d`
+      wget -qO- $(params.source-url) | tar xvz -m
+      if [ `ls -l ./mkdocs.y* 2>/dev/null | wc -l ` -gt 0 ]; then
+        if [ `ls -l ./catalog/catalog-info.yaml 2>/dev/null | wc -l ` -gt 0 ]; then
+          ENTITY_TYPE=`grep "kind: " catalog/catalog-info.yaml | sed 's/^.*: //'`
+          ENTITY_NAME=`grep "name: " catalog/catalog-info.yaml | sed 's/^.*: //'`
+          if [ `grep "namespace: " catalog/catalog-info.yaml | sed 's/^.*: //' | wc -l ` -gt 0 ]; then
+            ENTITY_NAMESPACE=`grep "namespace: " catalog/catalog-info.yaml | sed 's/^.*: //' | wc -l `
+          else
+            ENTITY_NAMESPACE=default
+          fi
+          techdocs-cli generate --no-docker
+          techdocs-cli publish --publisher-type awsS3 --storage-name $S3_BUCKET_NAME --entity $ENTITY_NAMESPACE/$ENTITY_TYPE/$ENTITY_NAME --awsEndpoint $S3_ENDPOINT_URL --awsS3ForcePathStyle
+        else
+          echo "Error: Must have a catalog-info file at the path catalog/catalog-info.yaml to generate and publish docs."
+          exit 1
+        fi
+      else
+        echo "No docs generated as there is no mkdocs.yml in the root of the repository."
+      fi

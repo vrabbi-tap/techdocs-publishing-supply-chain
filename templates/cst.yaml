@@ -1,0 +1,39 @@
+apiVersion: carto.run/v1alpha1
+kind: ClusterSourceTemplate
+metadata:
+  name: techdocs-publisher
+spec:
+  healthRule:
+    singleConditionType: Ready
+  revisionPath: .status.outputs.revision
+  urlPath: .status.outputs.url
+  ytt: |
+    #@ load("@ytt:data", "data")
+
+    #@ def merge_labels(fixed_values):
+    #@   labels = {}
+    #@   if hasattr(data.values.workload.metadata, "labels"):
+    #@     labels.update(data.values.workload.metadata.labels)
+    #@   end
+    #@   labels.update(fixed_values)
+    #@   return labels
+    #@ end
+
+    ---
+    apiVersion: carto.run/v1alpha1
+    kind: Runnable
+    metadata:
+      name: #@ data.values.workload.metadata.name
+      labels: #@ merge_labels({ "app.kubernetes.io/component": "techdocs" })
+    spec:
+      #@ if/end hasattr(data.values.workload.spec, "serviceAccountName"):
+      serviceAccountName: #@ data.values.workload.spec.serviceAccountName
+
+      runTemplateRef:
+        name: techdocs-publisher
+        kind: ClusterRunTemplate
+
+      inputs:
+        source-url: #@ data.values.source.url
+        source-revision: #@ data.values.source.revision
+        s3-creds-secret-name: #@ data.values.params.s3_creds_secret_name
